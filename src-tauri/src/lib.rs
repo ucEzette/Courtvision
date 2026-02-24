@@ -29,86 +29,46 @@ pub struct Tag {
     pub shot_type: Option<String>,
 }
 
+/// Export a single clip using FFmpeg.
+/// All data is passed directly from the frontend — no Rust-side DB queries needed.
 #[tauri::command]
-async fn add_video(app: tauri::AppHandle, file_path: String, file_name: String) -> Result<i64, String> {
-    db::add_video(&app, &file_path, &file_name).await
-}
-
-#[tauri::command]
-async fn save_clip(
-    app: tauri::AppHandle,
-    video_id: i64,
+async fn export_clip(
+    video_path: String,
     clip_type: String,
     start_time: f64,
     end_time: f64,
-) -> Result<i64, String> {
-    // Enforce 5-second maximum
-    let max_end = start_time + 5.0;
-    let actual_end = if end_time > max_end { max_end } else { end_time };
-    db::save_clip(&app, video_id, &clip_type, start_time, actual_end).await
-}
-
-#[tauri::command]
-async fn add_tag(
-    app: tauri::AppHandle,
-    clip_id: i64,
-    player: String,
-    action: String,
-    result: String,
-    shot_type: Option<String>,
-) -> Result<i64, String> {
-    // Check tag count before adding
-    let count = db::get_tag_count(&app, clip_id).await?;
-    if count >= 3 {
-        return Err("Maximum of 3 tags per clip reached.".to_string());
-    }
-    db::add_tag(&app, clip_id, &player, &action, &result, shot_type.as_deref()).await
-}
-
-#[tauri::command]
-async fn get_clips(app: tauri::AppHandle, video_id: i64) -> Result<Vec<Clip>, String> {
-    db::get_clips(&app, video_id).await
-}
-
-#[tauri::command]
-async fn delete_clip(app: tauri::AppHandle, clip_id: i64) -> Result<(), String> {
-    db::delete_clip(&app, clip_id).await
-}
-
-#[tauri::command]
-async fn export_clip(
-    app: tauri::AppHandle,
-    clip_id: i64,
+    file_name: String,
     output_dir: String,
 ) -> Result<String, String> {
-    let clips = db::get_clip_by_id(&app, clip_id).await?;
-    let clip = clips.first().ok_or("Clip not found")?;
-
-    // Get the video path
-    let video = db::get_video_by_id(&app, clip.video_id).await?;
+    // Validate inputs
+    if video_path.is_empty() {
+        return Err("Video path is required".to_string());
+    }
+    if start_time >= end_time {
+        return Err("Invalid time range".to_string());
+    }
 
     let output_filename = format!(
         "{}_{}_{}s-{}s.mp4",
-        video.file_name.replace('.', "_"),
-        clip.clip_type,
-        clip.start_time as i64,
-        clip.end_time as i64
+        file_name.replace('.', "_"),
+        clip_type,
+        start_time as i64,
+        end_time as i64
     );
-    let output_path = format!("{}/{}", output_dir, output_filename);
+    let output_path = format!("{}/{}", output_dir.trim_end_matches('/'), output_filename);
 
-    // Use std::process::Command for FFmpeg
     let status = std::process::Command::new("ffmpeg")
         .args([
             "-y",
-            "-i", &video.file_path,
-            "-ss", &clip.start_time.to_string(),
-            "-to", &clip.end_time.to_string(),
+            "-i", &video_path,
+            "-ss", &format!("{:.3}", start_time),
+            "-to", &format!("{:.3}", end_time),
             "-c", "copy",
             "-avoid_negative_ts", "make_zero",
             &output_path,
         ])
         .output()
-        .map_err(|e| format!("Failed to run FFmpeg: {}. Make sure FFmpeg is installed.", e))?;
+        .map_err(|e| format!("Failed to run FFmpeg: {}. Make sure FFmpeg is installed (brew install ffmpeg).", e))?;
 
     if status.status.success() {
         Ok(output_path)
@@ -118,28 +78,19 @@ async fn export_clip(
     }
 }
 
+/// Check if FFmpeg is installed on the system.
 #[tauri::command]
-async fn export_all_clips(
-    app: tauri::AppHandle,
-    video_id: i64,
-    output_dir: String,
-) -> Result<Vec<String>, String> {
-    let clips = db::get_clips(&app, video_id).await?;
-    let mut exported = Vec::new();
-
-    for clip in &clips {
-        match export_clip(app.clone(), clip.id, output_dir.clone()).await {
-            Ok(path) => exported.push(path),
-            Err(e) => return Err(format!("Failed to export clip {}: {}", clip.id, e)),
-        }
+async fn check_ffmpeg() -> Result<bool, String> {
+    match std::process::Command::new("ffmpeg").arg("-version").output() {
+        Ok(output) => Ok(output.status.success()),
+        Err(_) => Ok(false),
     }
-
-    Ok(exported)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(
             tauri_plugin_sql::Builder::default()
@@ -147,23 +98,9 @@ pub fn run() {
         )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .setup(|app| {
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = db::initialize(&handle).await {
-                    eprintln!("Database initialization error: {}", e);
-                }
-            });
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
-            add_video,
-            save_clip,
-            add_tag,
-            get_clips,
-            delete_clip,
             export_clip,
-            export_all_clips,
+            check_ffmpeg,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
