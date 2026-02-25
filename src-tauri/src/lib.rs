@@ -87,9 +87,48 @@ async fn check_ffmpeg() -> Result<bool, String> {
     }
 }
 
+/// Returns the port the local streaming server is running on.
+#[tauri::command]
+async fn get_stream_port(state: tauri::State<'_, StreamPort>) -> Result<u16, String> {
+    Ok(state.0)
+}
+
+struct StreamPort(u16);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Start the local streaming server
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("Failed to bind to random port");
+    listener.set_nonblocking(true).expect("Cannot set non-blocking");
+    let port = listener.local_addr().unwrap().port();
+
     tauri::Builder::default()
+        .manage(StreamPort(port))
+        .setup(move |_app| {
+            // Spawn the Axum server in a background Tokio task
+            tauri::async_runtime::spawn(async move {
+                use axum::Router;
+                use tower_http::cors::{Any, CorsLayer};
+                use tower_http::services::ServeDir;
+
+                let cors = CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_methods(Any)
+                    .allow_headers(Any);
+
+                // Serve the entire filesystem (read-only) for video streaming
+                // The frontend will request /Users/name/... via http://localhost:PORT/Users/name/...
+                let app = Router::new()
+                    .nest_service("/", ServeDir::new("/"))
+                    .layer(cors);
+
+                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                println!("Streaming server listening on {}", listener.local_addr().unwrap());
+                axum::serve(listener, app).await.unwrap();
+            });
+
+            Ok(())
+        })
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(
@@ -101,6 +140,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             export_clip,
             check_ffmpeg,
+            get_stream_port,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
