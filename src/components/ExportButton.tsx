@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-dialog';
+import { getClips, getVideo } from '../database';
 
 interface ExportButtonProps {
     videoId: number | null;
@@ -17,27 +18,44 @@ export function ExportButton({ videoId, clipCount, disabled }: ExportButtonProps
         if (!videoId || clipCount === 0) return;
 
         try {
-            // Ask user to select output directory
-            const outputDir = await save({
+            // Ask user to select purely a directory
+            const outputDir = await open({
+                directory: true,
+                multiple: false,
                 title: 'Select Export Folder',
-                defaultPath: 'courtvision-clips',
             });
 
-            if (!outputDir) return;
-
-            // Use the parent directory of the selected path
-            const dirPath = outputDir.substring(0, outputDir.lastIndexOf('/'));
+            if (!outputDir || typeof outputDir !== 'string') return;
 
             setExporting(true);
             setError('');
-            setProgress('Exporting clips...');
+            setProgress('Starting export...');
 
-            const result = await invoke<string[]>('export_all_clips', {
-                videoId,
-                outputDir: dirPath || outputDir,
-            });
+            const video = await getVideo(videoId);
+            if (!video) throw new Error("Source video not found in database.");
 
-            setProgress(`✓ Exported ${result.length} clip(s) successfully!`);
+            const clips = await getClips(videoId);
+            let successCount = 0;
+
+            for (const clip of clips) {
+                try {
+                    setProgress(`Exporting clip ${successCount + 1} of ${clips.length}...`);
+                    await invoke('export_clip', {
+                        videoPath: video.file_path,
+                        clipType: clip.clip_type,
+                        startTime: clip.start_time,
+                        endTime: clip.end_time,
+                        fileName: video.file_name,
+                        outputDir: outputDir,
+                    });
+                    successCount++;
+                } catch (e) {
+                    console.error("Failed to export clip ID:", clip.id, e);
+                    throw new Error(`Failed on clip ${successCount + 1}: ${e}`);
+                }
+            }
+
+            setProgress(`✓ Exported ${successCount} clip(s) successfully!`);
             setTimeout(() => {
                 setProgress('');
                 setExporting(false);

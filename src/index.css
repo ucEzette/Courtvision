@@ -48,13 +48,17 @@
 }
 
 /* ─── Reset & Base ─── */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   overflow: hidden;
 }
@@ -94,19 +98,10 @@ body {
   gap: 12px;
 }
 
-.header-brand .logo {
-  display: flex;
-  align-items: center;
-}
-
-.header-brand h1 {
-  font-size: 18px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
-  background: linear-gradient(135deg, var(--offense-color), var(--defense-color));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.header-logo {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
 }
 
 .header-status {
@@ -620,10 +615,21 @@ body {
   font-weight: 600;
 }
 
-.tag-result.score { color: var(--success); }
-.tag-result.miss { color: var(--text-muted); }
-.tag-result.foul { color: var(--warning); }
-.tag-result.turnover { color: var(--error); }
+.tag-result.score {
+  color: var(--success);
+}
+
+.tag-result.miss {
+  color: var(--text-muted);
+}
+
+.tag-result.foul {
+  color: var(--warning);
+}
+
+.tag-result.turnover {
+  color: var(--error);
+}
 
 .tag-shot {
   color: var(--accent);
@@ -699,10 +705,45 @@ body {
 }
 
 .export-hint {
-  font-size: 11px;
-  color: var(--text-muted);
   text-align: center;
   margin-top: 8px;
+}
+
+/* ─── Playback Speed Controls ─── */
+.playback-controls {
+  display: flex;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-left: 12px;
+  margin-right: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-rate {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.btn-rate:last-child {
+  border-right: none;
+}
+
+.btn-rate:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.btn-rate.active {
+  background: rgba(255, 107, 0, 0.2);
+  color: var(--accent);
 }
 
 /* ─── Buttons ─── */
@@ -1102,8 +1143,13 @@ body {
 
 /* ─── Animations ─── */
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 @keyframes modal-in {
@@ -1111,6 +1157,7 @@ body {
     opacity: 0;
     transform: scale(0.95) translateY(10px);
   }
+
   to {
     opacity: 1;
     transform: scale(1) translateY(0);
@@ -1122,6 +1169,7 @@ body {
     opacity: 0;
     transform: translateX(10px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -1133,6 +1181,7 @@ body {
     opacity: 0;
     transform: translateX(-20px);
   }
+
   to {
     opacity: 1;
     transform: translateX(0);
@@ -1144,6 +1193,7 @@ body {
     opacity: 0;
     transform: translateY(8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -1151,15 +1201,33 @@ body {
 }
 
 @keyframes pulse-bg {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.7; }
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
 }
 
 @keyframes rec-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.8); }
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(0.8);
+  }
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
