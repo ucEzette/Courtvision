@@ -15,17 +15,14 @@ interface TaggingFormProps {
 
 const ACTIONS = [
     'Drive',
-    'Jump Shot',
+    '2-Pointer',
     '3-Pointer',
     'Post Up',
     'Fast Break',
     'Pick & Roll',
     'Isolation',
-    'Cut',
     'Transition',
     'Free Throw',
-    'Putback',
-    'Tip-in',
 ];
 
 const RESULTS = ['Score', 'Miss', 'Foul', 'Turnover'] as const;
@@ -36,6 +33,7 @@ export function TaggingForm({ clipType, currentTagCount, onSubmit, onClose }: Ta
     const [step, setStep] = useState(1);
     const [player, setPlayer] = useState('');
     const [action, setAction] = useState('');
+    const [customAction, setCustomAction] = useState('');
     const [result, setResult] = useState('');
     const [shotType, setShotType] = useState('');
 
@@ -56,6 +54,7 @@ export function TaggingForm({ clipType, currentTagCount, onSubmit, onClose }: Ta
         setStep(1);
         setPlayer('');
         setAction('');
+        setCustomAction('');
         setResult('');
         setShotType('');
     };
@@ -110,15 +109,18 @@ export function TaggingForm({ clipType, currentTagCount, onSubmit, onClose }: Ta
                     {/* Step 1: Player */}
                     {step >= 1 && (
                         <div className={`form-step ${step === 1 ? 'current' : 'completed'}`}>
-                            <label>Player Name / Number <span className="required">*</span></label>
-                            <input
-                                type="text"
+                            <label>Player Name or Notes <span className="required">*</span></label>
+                            <textarea
                                 value={player}
                                 onChange={(e) => setPlayer(e.target.value)}
-                                placeholder="e.g. #23 or Amara Diallo"
+                                placeholder="e.g. #23 or Amara Diallo (or extensive clip notes)"
                                 autoFocus
+                                rows={3}
                                 onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && player.trim()) setStep(2);
+                                    if (e.key === 'Enter' && !e.shiftKey && player.trim()) {
+                                        e.preventDefault();
+                                        setStep(2);
+                                    }
                                 }}
                             />
                             {step === 1 && (
@@ -144,6 +146,7 @@ export function TaggingForm({ clipType, currentTagCount, onSubmit, onClose }: Ta
                                         className={`action-chip ${action === a ? 'selected' : ''}`}
                                         onClick={() => {
                                             setAction(a);
+                                            setCustomAction('');
                                             if (step === 2) setStep(3);
                                         }}
                                     >
@@ -151,6 +154,26 @@ export function TaggingForm({ clipType, currentTagCount, onSubmit, onClose }: Ta
                                     </button>
                                 ))}
                             </div>
+                            {step === 2 && (
+                                <div style={{ marginTop: '12px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Or type custom action..."
+                                        value={customAction}
+                                        onChange={(e) => {
+                                            setCustomAction(e.target.value);
+                                            setAction(e.target.value.trim());
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter' && customAction.trim()) {
+                                                e.preventDefault();
+                                                setStep(3);
+                                            }
+                                        }}
+                                        style={{ width: '100%', padding: '10px', borderRadius: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'white', outline: 'none' }}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
 

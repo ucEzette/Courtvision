@@ -25,11 +25,15 @@ async function runMigrations(database: Database): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
       clip_type TEXT NOT NULL CHECK(clip_type IN ('Offense','Defense')),
+      label TEXT,
       start_time REAL NOT NULL,
       end_time REAL NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Safely run migration to add 'label' column if it doesn't exist on older databases
+  await database.execute('ALTER TABLE clips ADD COLUMN label TEXT').catch(() => {});
 
   await database.execute(`
     CREATE TABLE IF NOT EXISTS tags (
@@ -79,6 +83,7 @@ export interface ClipRecord {
   id: number;
   video_id: number;
   clip_type: 'Offense' | 'Defense';
+  label: string | null;
   start_time: number;
   end_time: number;
   tags: TagRecord[];
@@ -100,15 +105,17 @@ export async function saveClip(
   endTime: number
 ): Promise<number> {
   const database = await getDb();
-  // Enforce 5-second max
-  const maxEnd = startTime + 5.0;
-  const actualEnd = Math.min(endTime, maxEnd);
 
   const result = await database.execute(
     'INSERT INTO clips (video_id, clip_type, start_time, end_time) VALUES (?, ?, ?, ?)',
-    [videoId, clipType, startTime, actualEnd]
+    [videoId, clipType, startTime, endTime]
   );
   return result.lastInsertId ?? 0;
+}
+
+export async function updateClipLabel(clipId: number, label: string): Promise<void> {
+  const database = await getDb();
+  await database.execute('UPDATE clips SET label = ? WHERE id = ?', [label, clipId]);
 }
 
 export async function getClips(videoId: number): Promise<ClipRecord[]> {

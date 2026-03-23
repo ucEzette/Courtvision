@@ -1002,7 +1002,8 @@ body {
   font-weight: 400;
 }
 
-.form-step input[type="text"] {
+.form-step input[type="text"],
+.form-step textarea {
   width: 100%;
   padding: 10px 14px;
   background: var(--bg-elevated);
@@ -1013,14 +1014,18 @@ body {
   font-family: 'Inter', sans-serif;
   outline: none;
   transition: all var(--transition);
+  resize: vertical;
+  min-height: 40px;
 }
 
-.form-step input[type="text"]:focus {
+.form-step input[type="text"]:focus,
+.form-step textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-.form-step input[type="text"]::placeholder {
+.form-step input[type="text"]::placeholder,
+.form-step textarea::placeholder {
   color: var(--text-muted);
 }
 
@@ -1230,4 +1235,17 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+.clip-label-input {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: #fff;
+  font-size: 13px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-weight: 600;
+  outline: none;
+  width: 180px;
 }

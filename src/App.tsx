@@ -10,6 +10,7 @@ import {
   deleteClip,
   addTag,
   ClipRecord,
+  updateClipLabel,
 } from './database';
 
 type ClipType = 'Offense' | 'Defense';
@@ -32,7 +33,7 @@ export default function App() {
   // Hotkey engine state
   const [activeClipType, setActiveClipType] = useState<ClipType | null>(null);
   const clipStartRef = useRef<number | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
 
   // Tagging form state
   const [taggingClip, setTaggingClip] = useState<ClipRecord | null>(null);
@@ -75,24 +76,16 @@ export default function App() {
     if (activeClipType && clipStartRef.current !== null && videoId !== null) {
       // Get current time from the video player handle
       const endTime = videoPlayerRef.current?.getCurrentTime() ?? 0;
-      const clipId = await saveClip(videoId, activeClipType, clipStartRef.current, endTime);
+      await saveClip(videoId, activeClipType, clipStartRef.current, endTime);
 
       // Refresh clips
       const updatedClips = await getClips(videoId);
       setClips(updatedClips);
 
-      // Find the newly created clip for tagging
-      const newClip = updatedClips.find((c) => c.id === clipId);
-      if (newClip) {
-        setTaggingClip(newClip);
-        setShowTagForm(true);
-      }
+      // Clips are now saved silently so the user can continue watching the game uninterrupted
     }
 
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
+
 
     setActiveClipType(null);
     clipStartRef.current = null;
@@ -103,26 +96,7 @@ export default function App() {
     clipStartRef.current = startTime;
     setActiveClipType(type);
 
-    // Auto-stop after 5 seconds
-    timeoutRef.current = setTimeout(async () => {
-      // We need to manually save the clip here since stopRecording may have stale state
-      if (videoId !== null) {
-        const endTime = videoPlayerRef.current?.getCurrentTime() ?? startTime + 5;
-        const clipId = await saveClip(videoId, type, startTime, endTime);
-        const updatedClips = await getClips(videoId);
-        setClips(updatedClips);
 
-        const newClip = updatedClips.find((c) => c.id === clipId);
-        if (newClip) {
-          setTaggingClip(newClip);
-          setShowTagForm(true);
-        }
-      }
-
-      setActiveClipType(null);
-      clipStartRef.current = null;
-      timeoutRef.current = null;
-    }, 5000);
   }, [videoId]);
 
   // Global keydown listener
@@ -159,6 +133,16 @@ export default function App() {
         return;
       }
 
+      if (key === ' ') {
+        e.preventDefault();
+        if (videoPlayerRef.current?.isPlaying()) {
+          videoPlayerRef.current?.pause();
+        } else {
+          videoPlayerRef.current?.play();
+        }
+        return;
+      }
+
       if (key !== 'o' && key !== 'd') return;
 
       e.preventDefault();
@@ -177,19 +161,12 @@ export default function App() {
           // Inline the save logic to avoid stale closures
           if (clipStartRef.current !== null) {
             const endTime = videoPlayerRef.current?.getCurrentTime() ?? 0;
-            saveClip(videoId, activeClipType, clipStartRef.current, endTime).then(async (clipId) => {
+            saveClip(videoId, activeClipType, clipStartRef.current, endTime).then(async () => {
               const updatedClips = await getClips(videoId);
               setClips(updatedClips);
-              const newClip = updatedClips.find((c) => c.id === clipId);
-              if (newClip) {
-                setTaggingClip(newClip);
-                setShowTagForm(true);
-              }
+
             });
-            if (timeoutRef.current) {
-              clearTimeout(timeoutRef.current);
-              timeoutRef.current = null;
-            }
+
           }
         }
         // Start recording the new type
@@ -238,6 +215,11 @@ export default function App() {
     setTaggingClip(clip);
     setShowTagForm(true);
   }, []);
+
+  const handleUpdateLabel = useCallback(async (clipId: number, label: string) => {
+    await updateClipLabel(clipId, label);
+    await refreshClips();
+  }, [refreshClips]);
 
   return (
     <div className="app">
@@ -288,7 +270,7 @@ export default function App() {
                 <span>Defense</span>
               </div>
             </div>
-            <p className="hotkey-hint">Press to toggle · 5s max · Auto-switch between O/D</p>
+            <p className="hotkey-hint">Press to toggle · Auto-switch between O/D</p>
           </div>
 
           {/* Clips List */}
@@ -299,6 +281,7 @@ export default function App() {
               onSeek={handleSeek}
               onDelete={handleDeleteClip}
               onTagClip={handleTagClip}
+              onUpdateLabel={handleUpdateLabel}
             />
           </div>
 

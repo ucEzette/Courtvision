@@ -48,10 +48,13 @@ async fn export_clip(
         return Err("Invalid time range".to_string());
     }
 
+    // Sanitize the clip_type so custom labels don't break the filesystem during export
+    let safe_clip_type = clip_type.replace(|c: char| !c.is_alphanumeric() && c != ' ' && c != '-', "_");
+
     let output_filename = format!(
         "{}_{}_{}s-{}s.mp4",
         file_name.replace('.', "_"),
-        clip_type,
+        safe_clip_type,
         start_time as i64,
         end_time as i64
     );

@@ -42,7 +42,7 @@ export function ExportButton({ videoId, clipCount, disabled }: ExportButtonProps
                     setProgress(`Exporting clip ${successCount + 1} of ${clips.length}...`);
                     await invoke('export_clip', {
                         videoPath: video.file_path,
-                        clipType: clip.clip_type,
+                        clipType: clip.label || clip.clip_type,
                         startTime: clip.start_time,
                         endTime: clip.end_time,
                         fileName: video.file_name,

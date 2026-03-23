@@ -1,4 +1,5 @@
 // ClipsList component
+import { useState } from 'react';
 import { ClipRecord } from '../database';
 
 interface ClipsListProps {
@@ -6,9 +7,26 @@ interface ClipsListProps {
     onSeek: (time: number) => void;
     onDelete: (clipId: number) => void;
     onTagClip: (clip: ClipRecord) => void;
+    onUpdateLabel: (clipId: number, label: string) => void;
 }
 
-export function ClipsList({ clips, onSeek, onDelete, onTagClip }: ClipsListProps) {
+export function ClipsList({ clips, onSeek, onDelete, onTagClip, onUpdateLabel }: ClipsListProps) {
+    const [editingClipId, setEditingClipId] = useState<number | null>(null);
+    const [editValue, setEditValue] = useState('');
+
+    const handleEditStart = (e: React.MouseEvent, clip: ClipRecord) => {
+        e.stopPropagation();
+        setEditingClipId(clip.id);
+        setEditValue(clip.label || clip.clip_type);
+    };
+
+    const handleEditCommit = (clip: ClipRecord) => {
+        setEditingClipId(null);
+        if (editValue.trim() !== (clip.label || clip.clip_type)) {
+            onUpdateLabel(clip.id, editValue.trim() || clip.clip_type);
+        }
+    };
+
     const formatTime = (seconds: number): string => {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
@@ -36,9 +54,29 @@ export function ClipsList({ clips, onSeek, onDelete, onTagClip }: ClipsListProps
                     onClick={() => onSeek(clip.start_time)}
                 >
                     <div className="clip-card-header">
-                        <span className={`clip-type-badge ${clip.clip_type.toLowerCase()}`}>
-                            {clip.clip_type === 'Offense' ? '⚡' : '🛡️'} {clip.clip_type}
-                        </span>
+                        {editingClipId === clip.id ? (
+                            <input
+                                autoFocus
+                                className="clip-label-input"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                onClick={(e) => e.stopPropagation()}
+                                onBlur={() => handleEditCommit(clip)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleEditCommit(clip);
+                                    if (e.key === 'Escape') setEditingClipId(null);
+                                }}
+                            />
+                        ) : (
+                            <span 
+                                className={`clip-type-badge ${clip.clip_type.toLowerCase()}`}
+                                onClick={(e) => handleEditStart(e, clip)}
+                                title="Click to edit title"
+                                style={{ cursor: 'text' }}
+                            >
+                                {clip.clip_type === 'Offense' ? '⚡' : '🛡️'} {clip.label || clip.clip_type}
+                            </span>
+                        )}
                         <button
                             className="btn-icon-delete"
                             onClick={(e) => {
