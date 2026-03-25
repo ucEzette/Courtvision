@@ -13,6 +13,7 @@ interface ClipsListProps {
 export function ClipsList({ clips, onSeek, onDelete, onTagClip, onUpdateLabel }: ClipsListProps) {
     const [editingClipId, setEditingClipId] = useState<number | null>(null);
     const [editValue, setEditValue] = useState('');
+    const [searchQuery, setSearchQuery] = useState('');
 
     const handleEditStart = (e: React.MouseEvent, clip: ClipRecord) => {
         e.stopPropagation();
@@ -45,9 +46,44 @@ export function ClipsList({ clips, onSeek, onDelete, onTagClip, onUpdateLabel }:
         );
     }
 
+    const filteredClips = clips.filter(clip => {
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
+        
+        const titleMatch = (clip.label || clip.clip_type).toLowerCase().includes(q);
+        
+        const tagsMatch = clip.tags.some(tag => 
+            tag.player.toLowerCase().includes(q) ||
+            tag.action.toLowerCase().includes(q) ||
+            tag.result.toLowerCase().includes(q) ||
+            (tag.shot_type && tag.shot_type.toLowerCase().includes(q))
+        );
+
+        return titleMatch || tagsMatch;
+    });
+
     return (
-        <div className="clips-list">
-            {clips.map((clip) => (
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <div style={{ padding: '0 15px 15px' }}>
+                <input 
+                    type="text" 
+                    placeholder="Search tags, players, actions..." 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    style={{ 
+                        width: '100%', 
+                        padding: '10px 14px', 
+                        borderRadius: '6px', 
+                        background: 'var(--bg-elevated)', 
+                        border: '1px solid var(--border-default)', 
+                        color: 'white', 
+                        outline: 'none',
+                        fontSize: '14px'
+                    }}
+                />
+            </div>
+            <div className="clips-list" style={{ overflowY: 'auto', paddingBottom: '100px' }}>
+                {filteredClips.map((clip) => (
                 <div
                     key={clip.id}
                     className={`clip-card ${clip.clip_type.toLowerCase()}`}
@@ -134,6 +170,12 @@ export function ClipsList({ clips, onSeek, onDelete, onTagClip, onUpdateLabel }:
                     )}
                 </div>
             ))}
+            {filteredClips.length === 0 && (
+                <div className="clips-empty" style={{ marginTop: '20px', minHeight: '100px' }}>
+                    <p style={{ opacity: 0.6 }}>No clips match search "{searchQuery}"</p>
+                </div>
+            )}
+        </div>
         </div>
     );
 }

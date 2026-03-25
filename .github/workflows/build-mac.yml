@@ -29,6 +29,16 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm install
 
+      - name: Fetch and Inject FFmpeg Native Sidecar
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          curl -L -o mac.zip https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-macos-64.zip
+          unzip -o mac.zip
+          mv ffmpeg src-tauri/binaries/ffmpeg-x86_64-apple-darwin
+          cp src-tauri/binaries/ffmpeg-x86_64-apple-darwin src-tauri/binaries/ffmpeg-aarch64-apple-darwin
+          rm mac.zip ffprobe
+
       - name: Build Tauri Mac Installer (Apple Silicon)
         uses: tauri-apps/tauri-action@v0
         env:

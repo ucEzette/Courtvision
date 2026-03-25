@@ -29,6 +29,15 @@ jobs:
       - name: Install Frontend Dependencies
         run: npm install
 
+      - name: Fetch and Inject FFmpeg Native Sidecar
+        shell: bash
+        run: |
+          mkdir -p src-tauri/binaries
+          curl -L -o win.zip https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v6.1/ffmpeg-6.1-win-64.zip
+          unzip -o win.zip
+          mv ffmpeg.exe src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
+          rm win.zip ffprobe.exe
+
       - name: Build Tauri Windows Installer
         uses: tauri-apps/tauri-action@v0
         env:
