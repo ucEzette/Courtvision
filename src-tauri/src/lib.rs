@@ -62,16 +62,21 @@ async fn export_clip(
     );
     let output_path = format!("{}/{}", output_dir.trim_end_matches('/'), output_filename);
 
+    let duration = end_time - start_time;
+
     let sidecar_command = app_handle.shell().sidecar("ffmpeg")
         .map_err(|e| format!("Failed to find FFmpeg sidecar: {}", e))?;
 
     let output = sidecar_command
         .args([
             "-y",
-            "-i", &video_path,
             "-ss", &format!("{:.3}", start_time),
-            "-to", &format!("{:.3}", end_time),
-            "-c", "copy",
+            "-i", &video_path,
+            "-t", &format!("{:.3}", duration),
+            "-map", "0:v",
+            "-map", "0:a?",
+            "-c:v", "copy",
+            "-c:a", "copy",
             "-avoid_negative_ts", "make_zero",
             &output_path,
         ])
