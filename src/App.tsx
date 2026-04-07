@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { isTauri } from './lib/platform';
 import { VideoPlayer, VideoPlayerHandle } from './components/VideoPlayer';
 import { ClipsList } from './components/ClipsList';
 import { TaggingForm } from './components/TaggingForm';
@@ -9,6 +10,7 @@ import {
   getClips,
   deleteClip,
   addTag,
+  deleteVideo,
   ClipRecord,
   updateClipLabel,
 } from './database';
@@ -25,40 +27,44 @@ export default function App() {
   const [streamPort, setStreamPort] = useState<number | null>(null);
 
   useEffect(() => {
-    import('@tauri-apps/api/core').then(({ invoke }) => {
-      invoke<number>('get_stream_port').then(setStreamPort).catch(console.error);
-    });
-
-    // Check for updates automatically in the background
-    import('@tauri-apps/plugin-updater').then(({ check }) => {
-      check().then((update) => {
-        if (update) {
-          console.log(`Found update ${update.version} from ${update.date}`);
-          let downloaded = 0;
-          let contentLength = 0;
-          update.downloadAndInstall((event) => {
-            switch (event.event) {
-              case 'Started':
-                contentLength = event.data.contentLength || 0;
-                console.log(`Started downloading ${event.data.contentLength} bytes`);
-                break;
-              case 'Progress':
-                downloaded += event.data.chunkLength;
-                console.log(`Downloaded ${downloaded} from ${contentLength}`);
-                break;
-              case 'Finished':
-                console.log('Download finished');
-                break;
-            }
-          }).then(() => {
-            // Relaunch the app to apply the update
-            import('@tauri-apps/plugin-process').then(({ relaunch }) => {
-              relaunch();
-            });
-          });
-        }
+    if (isTauri()) {
+      import('@tauri-apps/api/core').then(({ invoke }) => {
+        invoke<number>('get_stream_port').then(setStreamPort).catch(console.error);
       });
-    }).catch(console.error);
+    }
+
+    // Check for updates automatically in the background (Tauri only)
+    if (isTauri()) {
+      import('@tauri-apps/plugin-updater').then(({ check }) => {
+        check().then((update) => {
+          if (update) {
+            console.log(`Found update ${update.version} from ${update.date}`);
+            let downloaded = 0;
+            let contentLength = 0;
+            update.downloadAndInstall((event) => {
+              switch (event.event) {
+                case 'Started':
+                  contentLength = event.data.contentLength || 0;
+                  console.log(`Started downloading ${event.data.contentLength} bytes`);
+                  break;
+                case 'Progress':
+                  downloaded += event.data.chunkLength;
+                  console.log(`Downloaded ${downloaded} from ${contentLength}`);
+                  break;
+                case 'Finished':
+                  console.log('Download finished');
+                  break;
+              }
+            }).then(() => {
+              // Relaunch the app to apply the update
+              import('@tauri-apps/plugin-process').then(({ relaunch }) => {
+                relaunch();
+              });
+            });
+          }
+        });
+      }).catch(console.error);
+    }
   }, []);
 
   // Hotkey engine state
@@ -252,6 +258,14 @@ export default function App() {
     await refreshClips();
   }, [refreshClips]);
 
+  const handleVideoDelete = useCallback(async () => {
+    if (videoId !== null) {
+      await deleteVideo(videoId);
+      setVideoId(null);
+      setClips([]);
+    }
+  }, [videoId]);
+
   return (
     <div className="app">
       {/* Header */}
@@ -260,12 +274,6 @@ export default function App() {
           <img src="/courtvisionlogo.png" alt="Courtvision" className="header-logo" />
         </div>
         <div className="header-status">
-          {activeClipType && (
-            <div className={`status-recording ${activeClipType.toLowerCase()}`}>
-              <span className="rec-dot" />
-              Recording {activeClipType}
-            </div>
-          )}
           {videoId && (
             <span className="clip-counter">{clips.length} clip{clips.length !== 1 ? 's' : ''}</span>
           )}
@@ -279,6 +287,7 @@ export default function App() {
           <VideoPlayer
             ref={videoPlayerRef}
             onVideoLoaded={handleVideoLoaded}
+            onVideoDeleted={handleVideoDelete}
             activeClipType={activeClipType}
             previewRange={previewRange}
             onPreviewEnd={handlePreviewEnd}

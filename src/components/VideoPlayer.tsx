@@ -1,11 +1,13 @@
 import { useRef, useState, useCallback, forwardRef, useImperativeHandle, useEffect } from 'react';
-import { open } from '@tauri-apps/plugin-dialog';
+import { isTauri } from '../lib/platform';
+import { uploadFile, getDownloadUrl, deleteFile } from '../lib/storage-web';
 
 interface VideoPlayerProps {
     onVideoLoaded: (filePath: string, fileName: string) => void;
     activeClipType: 'Offense' | 'Defense' | null;
     previewRange: { start: number; end: number } | null;
-    onPreviewEnd: () => void;
+    onPreviewEnd?: () => void;
+    onVideoDeleted?: () => void;
     streamPort: number | null;
 }
 
@@ -20,12 +22,16 @@ export interface VideoPlayerHandle {
 }
 
 export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
-    ({ onVideoLoaded, activeClipType, previewRange, onPreviewEnd, streamPort }, ref) => {
+    ({ onVideoLoaded, activeClipType, previewRange, onPreviewEnd, onVideoDeleted, streamPort }, ref) => {
         const videoRef = useRef<HTMLVideoElement>(null);
+        const fileInputRef = useRef<HTMLInputElement>(null);
         const [videoSrc, setVideoSrc] = useState<string | null>(null);
+        const [currentKey, setCurrentKey] = useState<string | null>(null);
         const [fileName, setFileName] = useState<string>('');
         const [playing, setPlaying] = useState(false);
         const [loading, setLoading] = useState(false);
+        const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+        const [isResuming, setIsResuming] = useState(false);
         const [playbackRate, setPlaybackRateState] = useState<number>(1);
         const previewTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -53,7 +59,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                             clearInterval(previewTimerRef.current);
                             previewTimerRef.current = null;
                         }
-                        onPreviewEnd();
+                        if (onPreviewEnd) onPreviewEnd();
                     }
                 }, 100);
             },
@@ -89,23 +95,25 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             setLoading(true);
             try {
                 let streamUrl: string;
-                // Strip 'file://' prefix which drag-drop events sometimes include
                 const cleanPath = filePath.replace(/^file:\/\//i, '');
                 
-                // Tauri's asset protocol handles Range requests & audio natively on Windows WebView2.
-                // On macOS WebKit, the asset protocol often breaks audio tracks, so we use the local stream server.
-                if (navigator.userAgent.includes('Win')) {
-                    const { convertFileSrc } = await import('@tauri-apps/api/core');
-                    streamUrl = convertFileSrc(cleanPath);
+                if (isTauri()) {
+                  if (navigator.userAgent.includes('Win')) {
+                      const { convertFileSrc } = await import('@tauri-apps/api/core');
+                      streamUrl = convertFileSrc(cleanPath);
+                  } else {
+                      if (!streamPort) {
+                          console.error('Stream port is not available yet');
+                          return;
+                      }
+                      const encodedSegments = cleanPath.split('/').map(encodeURIComponent);
+                      const encodedPath = encodedSegments.join('/');
+                      streamUrl = `http://127.0.0.1:${streamPort}${encodedPath.startsWith('/') ? '' : '/'}${encodedPath}`;
+                  }
                 } else {
-                    if (!streamPort) {
-                        console.error('Stream port is not available yet');
-                        return;
-                    }
-                    // For macOS/Linux, ensure valid URL encoding while preserving the absolute path root
-                    const encodedSegments = cleanPath.split('/').map(encodeURIComponent);
-                    const encodedPath = encodedSegments.join('/');
-                    streamUrl = `http://127.0.0.1:${streamPort}${encodedPath.startsWith('/') ? '' : '/'}${encodedPath}`;
+                  // Web: In web mode, filePath is the R2 key
+                  streamUrl = await getDownloadUrl(filePath);
+                  setCurrentKey(filePath);
                 }
 
                 setVideoSrc(streamUrl);
@@ -118,26 +126,78 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             }
         }, [onVideoLoaded, streamPort]);
 
-        const handleOpenFile = useCallback(async () => {
-            const selected = await open({
-                multiple: false,
-                filters: [
-                    {
-                        name: 'Video',
-                        extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'],
-                    },
-                ],
-            });
+        const handleDelete = useCallback(async () => {
+            if (!isTauri() && !currentKey) return;
+            
+            const confirmed = window.confirm('Permanently delete this video and all its clips? This will clear its storage space.');
+            if (!confirmed) return;
 
-            if (selected && typeof selected === 'string') {
-                await processFile(selected);
+            setLoading(true);
+            try {
+                if (!isTauri() && currentKey) {
+                    if (onVideoDeleted) await onVideoDeleted();
+                    await deleteFile(currentKey);
+                    alert('Video deleted successfully.');
+                    window.location.reload();
+                }
+            } catch (err) {
+                console.error('Deletion failed:', err);
+                alert('Deletion failed. See console.');
+            } finally {
+                setLoading(false);
+            }
+        }, [currentKey]);
+
+        const handleWebFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+
+            setLoading(true);
+            setUploadProgress(0);
+            setIsResuming(false); // Reset
+            try {
+                const key = await uploadFile(file, (p) => {
+                    setUploadProgress(p);
+                    if (p > 0 && p < 100) setIsResuming(true); // Simple heuristic: if it jumps to >0 quickly it's resuming
+                });
+                setUploadProgress(null);
+                await processFile(key);
+            } catch (err: any) {
+                console.error('Upload failed:', err);
+                alert(`Upload failed: ${err.message || 'Check your internet and CORS settings'}`);
+            } finally {
+                setLoading(false);
+                setUploadProgress(null);
+            }
+        };
+
+        const handleOpenFile = useCallback(async () => {
+            if (isTauri()) {
+              const { open } = await import('@tauri-apps/plugin-dialog');
+              const selected = await open({
+                  multiple: false,
+                  filters: [
+                      {
+                          name: 'Video',
+                          extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'],
+                      },
+                  ],
+              });
+
+              if (selected && typeof selected === 'string') {
+                  await processFile(selected);
+              }
+            } else {
+              // Web: click the hidden file input
+              fileInputRef.current?.click();
             }
         }, [processFile]);
 
         // Drag and drop support
         useEffect(() => {
-            let unlisten: () => void;
+            if (!isTauri()) return;
 
+            let unlisten: () => void;
             const setupDragDrop = async () => {
                 const { listen } = await import('@tauri-apps/api/event');
                 unlisten = await listen<any>('tauri://drag-drop', (e) => {
@@ -146,7 +206,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                     if (paths && paths.length > 0) {
                         let file = paths[0];
                         file = file.replace(/^file:\/\//i, '');
-                        // On Windows, the path might be like /C:/Users/...
                         if (navigator.userAgent.includes('Win') && file.startsWith('/')) {
                             file = file.slice(1);
                         }
@@ -166,13 +225,34 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
         return (
             <div className="video-player">
+                {/* Hidden input for Web selection */}
+                {!isTauri() && (
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    style={{ display: 'none' }} 
+                    accept="video/*" 
+                    onChange={handleWebFileChange}
+                  />
+                )}
+
                 {!videoSrc ? (
                     <div className="video-placeholder" onClick={handleOpenFile}>
                         <div className="placeholder-content">
                             {loading ? (
                                 <>
-                                    <div className="loading-spinner" />
-                                    <h3>Loading video…</h3>
+                                    <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+                                        <div className="w-full max-w-xs bg-gray-200 rounded-full h-2.5 mb-4 overflow-hidden">
+                                            <div
+                                                className="bg-cyan-500 h-2.5 rounded-full transition-all duration-300"
+                                                style={{ width: `${uploadProgress}%` }}
+                                            ></div>
+                                        </div>
+                                        <p className="text-gray-600 font-medium">
+                                            {uploadProgress === 100 ? 'Finalizing...' : (isResuming ? `Resuming: ${uploadProgress}%` : `Uploading: ${uploadProgress}%`)}
+                                        </p>
+                                        <p className="text-xs text-gray-400 mt-1">Don't close this tab while uploading large videos.</p>
+                                    </div>
                                 </>
                             ) : (
                                 <>
@@ -180,7 +260,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                                         <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                     </svg>
                                     <h3>Import Game Video</h3>
-                                    <p>Click here or drag a video file</p>
+                                    <p>{isTauri() ? 'Click here or drag a video file' : 'Click to upload to Cloudflare'}</p>
                                     <p className="formats">MP4 · MOV · AVI · MKV · WebM</p>
                                 </>
                             )}
@@ -192,6 +272,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                             ref={videoRef}
                             src={videoSrc}
                             controls
+                            crossOrigin="anonymous"
                             className="video-element"
                             onPlay={() => setPlaying(true)}
                             onPause={() => setPlaying(false)}
@@ -214,9 +295,16 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                                 >2x</button>
                             </div>
 
-                            <button className="btn-secondary btn-sm" onClick={handleOpenFile}>
-                                Change Video
-                            </button>
+                            <div className="toolbar-actions">
+                                <button className="btn-secondary btn-sm" onClick={handleOpenFile}>
+                                    {isTauri() ? 'Change Video' : 'Upload New'}
+                                </button>
+                                {!isTauri() && (
+                                    <button className="btn-danger btn-sm" onClick={handleDelete}>
+                                        Delete
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </>
                 )}
@@ -240,3 +328,4 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 );
 
 VideoPlayer.displayName = 'VideoPlayer';
+
