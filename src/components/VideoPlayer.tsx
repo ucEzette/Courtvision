@@ -148,19 +148,24 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             }
         }, [currentKey]);
 
+        const [uploadStatus, setUploadStatus] = useState<string>('Uploading...');
+
         const handleWebFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
             const file = e.target.files?.[0];
             if (!file) return;
 
             setLoading(true);
             setUploadProgress(0);
-            setIsResuming(false); // Reset
+            setUploadStatus('Processing...');
+            setIsResuming(false); 
             try {
-                const key = await uploadFile(file, (p) => {
+                const key = await uploadFile(file, (p, status) => {
                     setUploadProgress(p);
-                    if (p > 0 && p < 100) setIsResuming(true); // Simple heuristic: if it jumps to >0 quickly it's resuming
+                    if (status) setUploadStatus(status);
+                    if (p > 0 && p < 100 && status === 'Uploading...') setIsResuming(true);
                 });
                 setUploadProgress(null);
+                setUploadStatus('');
                 await processFile(key);
             } catch (err: any) {
                 console.error('Upload failed:', err);
@@ -168,6 +173,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
             } finally {
                 setLoading(false);
                 setUploadProgress(null);
+                setUploadStatus('Uploading...');
             }
         };
 
@@ -249,7 +255,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                                             ></div>
                                         </div>
                                         <p className="text-gray-600 font-medium">
-                                            {uploadProgress === 100 ? 'Finalizing...' : (isResuming ? `Resuming: ${uploadProgress}%` : `Uploading: ${uploadProgress}%`)}
+                                            {uploadStatus === 'Processing Video...' ? `Processing: ${uploadProgress}%` : 
+                                             (isResuming ? `Resuming: ${uploadProgress}%` : `${uploadStatus}: ${uploadProgress}%`)}
                                         </p>
                                         <p className="text-xs text-gray-400 mt-1">Don't close this tab while uploading large videos.</p>
                                     </div>
