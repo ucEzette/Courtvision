@@ -149,6 +149,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         }, [currentKey]);
 
         const [uploadStatus, setUploadStatus] = useState<string>('Uploading...');
+        const [uploadSpeed, setUploadSpeed] = useState<string>('');
+        const startTimeRef = useRef<number>(0);
 
         const handleWebFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
             const file = e.target.files?.[0];
@@ -156,15 +158,28 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
             setLoading(true);
             setUploadProgress(0);
+            setUploadSpeed('');
             setUploadStatus('Processing...');
             setIsResuming(false); 
+            startTimeRef.current = Date.now();
+            
             try {
                 const key = await uploadFile(file, (p, status) => {
                     setUploadProgress(p);
                     if (status) setUploadStatus(status);
+                    
+                    // Speed Calculation in MB/s
+                    const elapsed = (Date.now() - startTimeRef.current) / 1000;
+                    if (elapsed > 1 && status === 'Uploading...') {
+                        const mbUploaded = (p / 100) * (file.size / (1024 * 1024));
+                        const speed = (mbUploaded / elapsed).toFixed(1);
+                        setUploadSpeed(`${speed} MB/s`);
+                    }
+
                     if (p > 0 && p < 100 && status === 'Uploading...') setIsResuming(true);
                 });
                 setUploadProgress(null);
+                setUploadSpeed('');
                 setUploadStatus('');
                 await processFile(key);
             } catch (err: any) {
@@ -256,7 +271,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, VideoPlayerProps>(
                                         </div>
                                         <p className="text-gray-600 font-medium">
                                             {uploadStatus === 'Processing Video...' ? `Processing: ${uploadProgress}%` : 
-                                             (isResuming ? `Resuming: ${uploadProgress}%` : `${uploadStatus}: ${uploadProgress}%`)}
+                                             (isResuming ? `Resuming: ${uploadProgress}%` : `${uploadStatus}: ${uploadProgress}% ${uploadSpeed ? `(@ ${uploadSpeed})` : ''}`)}
                                         </p>
                                         <p className="text-xs text-gray-400 mt-1">Don't close this tab while uploading large videos.</p>
                                     </div>
