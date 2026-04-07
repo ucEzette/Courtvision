@@ -25,4 +25,18 @@ dist-ssr
 
 # Tauri Updater Keys
 src-tauri/updater_keys
+src-tauri/updater_keys.pub
 *.pem
+
+# Wrangler & Dev
+.wrangler
+.env*
+.dev.vars
+wrangler.toml.local
+
+# Build outputs
+dist
+dist-ssr
+dist-tauri
+src-tauri/target/
+src-tauri/gen/
