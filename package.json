@@ -5,11 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "wrangler pages dev --compatibility-date=2024-04-01 --d1 DB=courtvision-db --r2 BUCKET=courtvision-videos",
     "build": "tsc && vite build",
-    "preview": "vite preview",
+    "build:web": "tsc && vite build",
     "tauri": "tauri"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1024.0",
+    "@aws-sdk/s3-request-presigner": "^3.1024.0",
+    "@ffmpeg/core": "^0.12.10",
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.2.0",
     "@tauri-apps/plugin-fs": "^2.2.0",
@@ -18,15 +24,18 @@
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-sql": "^2.3.2",
     "@tauri-apps/plugin-updater": "^2.10.0",
+    "@xmldom/xmldom": "^0.9.7",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260405.1",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.7.0",
     "typescript": "~5.8.3",
-    "vite": "^5.4.21"
+    "vite": "^5.4.21",
+    "wrangler": "^3.114.17"
   }
 }
