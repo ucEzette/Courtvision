@@ -1,13 +1,15 @@
 import Database from '@tauri-apps/plugin-sql';
+import { isTauri } from './lib/platform';
+import { webQuery, webExecute } from './lib/db-web';
 
-let db: Database | null = null;
+let tauriDb: Database | null = null;
 
-export async function getDb(): Promise<Database> {
-  if (!db) {
-    db = await Database.load('sqlite:courtvision.db');
-    await runMigrations(db);
+export async function getTauriDb(): Promise<Database> {
+  if (!tauriDb) {
+    tauriDb = await Database.load('sqlite:courtvision.db');
+    await runMigrations(tauriDb);
   }
-  return db;
+  return tauriDb;
 }
 
 async function runMigrations(database: Database): Promise<void> {
@@ -56,26 +58,44 @@ export interface VideoRecord {
 }
 
 export async function addVideo(filePath: string, fileName: string): Promise<number> {
-  const database = await getDb();
-  // Check if video already exists
-  const existing = await database.select<VideoRecord[]>(
-    'SELECT id FROM videos WHERE file_path = ?', [filePath]
-  );
-  if (existing.length > 0) return existing[0].id;
+  if (isTauri()) {
+    const database = await getTauriDb();
+    const existing = await database.select<VideoRecord[]>(
+      'SELECT id FROM videos WHERE file_path = ?', [filePath]
+    );
+    if (existing.length > 0) return existing[0].id;
 
-  const result = await database.execute(
-    'INSERT INTO videos (file_path, file_name) VALUES (?, ?)',
-    [filePath, fileName]
-  );
-  return result.lastInsertId ?? 0;
+    const result = await database.execute(
+      'INSERT INTO videos (file_path, file_name) VALUES (?, ?)',
+      [filePath, fileName]
+    );
+    return result.lastInsertId ?? 0;
+  } else {
+    // Web implementation
+    const existing = await webQuery<VideoRecord[]>(
+      'SELECT id FROM videos WHERE file_path = ?', [filePath]
+    );
+    if (existing && existing.length > 0) return existing[0].id;
+
+    const result = await webExecute(
+      'INSERT INTO videos (file_path, file_name) VALUES (?, ?)',
+      [filePath, fileName]
+    );
+    return result.lastInsertId ?? 0;
+  }
 }
 
 export async function getVideo(videoId: number): Promise<VideoRecord | null> {
-  const database = await getDb();
-  const rows = await database.select<VideoRecord[]>(
-    'SELECT * FROM videos WHERE id = ?', [videoId]
-  );
-  return rows[0] || null;
+  if (isTauri()) {
+    const database = await getTauriDb();
+    const rows = await database.select<VideoRecord[]>(
+      'SELECT * FROM videos WHERE id = ?', [videoId]
+    );
+    return rows[0] || null;
+  } else {
+    const rows = await webQuery<VideoRecord[]>('SELECT * FROM videos WHERE id = ?', [videoId]);
+    return rows[0] || null;
+  }
 }
 
 // ─── Clip Operations ───
@@ -104,41 +124,75 @@ export async function saveClip(
   startTime: number,
   endTime: number
 ): Promise<number> {
-  const database = await getDb();
-
-  const result = await database.execute(
-    'INSERT INTO clips (video_id, clip_type, start_time, end_time) VALUES (?, ?, ?, ?)',
-    [videoId, clipType, startTime, endTime]
-  );
-  return result.lastInsertId ?? 0;
+  if (isTauri()) {
+    const database = await getTauriDb();
+    const result = await database.execute(
+      'INSERT INTO clips (video_id, clip_type, start_time, end_time) VALUES (?, ?, ?, ?)',
+      [videoId, clipType, startTime, endTime]
+    );
+    return result.lastInsertId ?? 0;
+  } else {
+    const result = await webExecute(
+      'INSERT INTO clips (video_id, clip_type, start_time, end_time) VALUES (?, ?, ?, ?)',
+      [videoId, clipType, startTime, endTime]
+    );
+    return result.lastInsertId ?? 0;
+  }
 }
 
 export async function updateClipLabel(clipId: number, label: string): Promise<void> {
-  const database = await getDb();
-  await database.execute('UPDATE clips SET label = ? WHERE id = ?', [label, clipId]);
+  if (isTauri()) {
+    const database = await getTauriDb();
+    await database.execute('UPDATE clips SET label = ? WHERE id = ?', [label, clipId]);
+  } else {
+    await webExecute('UPDATE clips SET label = ? WHERE id = ?', [label, clipId]);
+  }
 }
 
 export async function getClips(videoId: number): Promise<ClipRecord[]> {
-  const database = await getDb();
-  const clips = await database.select<Omit<ClipRecord, 'tags'>[]>(
-    'SELECT * FROM clips WHERE video_id = ? ORDER BY created_at DESC',
-    [videoId]
-  );
-
-  const result: ClipRecord[] = [];
-  for (const clip of clips) {
-    const tags = await database.select<TagRecord[]>(
-      'SELECT * FROM tags WHERE clip_id = ?', [clip.id]
+  if (isTauri()) {
+    const database = await getTauriDb();
+    const clips = await database.select<Omit<ClipRecord, 'tags'>[]>(
+      'SELECT * FROM clips WHERE video_id = ? ORDER BY created_at DESC',
+      [videoId]
     );
-    result.push({ ...clip, tags });
+
+    const result: ClipRecord[] = [];
+    for (const clip of clips) {
+      const tags = await database.select<TagRecord[]>(
+        'SELECT * FROM tags WHERE clip_id = ?', [clip.id]
+      );
+      result.push({ ...clip, tags });
+    }
+    return result;
+  } else {
+    const clips = await webQuery<Omit<ClipRecord, 'tags'>[]>(
+      'SELECT * FROM clips WHERE video_id = ? ORDER BY created_at DESC',
+      [videoId]
+    );
+
+    const result: ClipRecord[] = [];
+    if (clips) {
+      for (const clip of clips) {
+        const tags = await webQuery<TagRecord[]>(
+          'SELECT * FROM tags WHERE clip_id = ?', [clip.id]
+        );
+        result.push({ ...clip, tags: tags || [] });
+      }
+    }
+    return result;
   }
-  return result;
 }
 
 export async function deleteClip(clipId: number): Promise<void> {
-  const database = await getDb();
-  await database.execute('DELETE FROM tags WHERE clip_id = ?', [clipId]);
-  await database.execute('DELETE FROM clips WHERE id = ?', [clipId]);
+  if (isTauri()) {
+    const database = await getTauriDb();
+    await database.execute('DELETE FROM tags WHERE clip_id = ?', [clipId]);
+    await database.execute('DELETE FROM clips WHERE id = ?', [clipId]);
+  } else {
+    await webExecute('DELETE FROM tags WHERE clip_id = ?', [clipId]);
+    await webExecute('DELETE FROM clips WHERE id = ?', [clipId]);
+  }
 }
 
 // ─── Tag Operations ───
@@ -149,27 +203,55 @@ export async function addTag(
   result: string,
   shotType?: string
 ): Promise<number> {
-  const database = await getDb();
+  if (isTauri()) {
+    const database = await getTauriDb();
+    const countResult = await database.select<{ cnt: number }[]>(
+      'SELECT COUNT(*) as cnt FROM tags WHERE clip_id = ?', [clipId]
+    );
+    if (countResult[0].cnt >= 3) {
+      throw new Error('Maximum of 3 tags per clip reached.');
+    }
 
-  // Check max 3 tags
-  const countResult = await database.select<{ cnt: number }[]>(
-    'SELECT COUNT(*) as cnt FROM tags WHERE clip_id = ?', [clipId]
-  );
-  if (countResult[0].cnt >= 3) {
-    throw new Error('Maximum of 3 tags per clip reached.');
+    const res = await database.execute(
+      'INSERT INTO tags (clip_id, player, action, result, shot_type) VALUES (?, ?, ?, ?, ?)',
+      [clipId, player, action, result, shotType || null]
+    );
+    return res.lastInsertId ?? 0;
+  } else {
+    const countResult = await webQuery<{ cnt: number }[]>(
+      'SELECT COUNT(*) as cnt FROM tags WHERE clip_id = ?', [clipId]
+    );
+    if (countResult && countResult[0]?.cnt >= 3) {
+      throw new Error('Maximum of 3 tags per clip reached.');
+    }
+
+    const res = await webExecute(
+      'INSERT INTO tags (clip_id, player, action, result, shot_type) VALUES (?, ?, ?, ?, ?)',
+      [clipId, player, action, result, shotType || null]
+    );
+    return res.lastInsertId ?? 0;
   }
-
-  const res = await database.execute(
-    'INSERT INTO tags (clip_id, player, action, result, shot_type) VALUES (?, ?, ?, ?, ?)',
-    [clipId, player, action, result, shotType || null]
-  );
-  return res.lastInsertId ?? 0;
 }
 
 export async function getTagCount(clipId: number): Promise<number> {
-  const database = await getDb();
-  const result = await database.select<{ cnt: number }[]>(
-    'SELECT COUNT(*) as cnt FROM tags WHERE clip_id = ?', [clipId]
-  );
-  return result[0].cnt;
+  if (isTauri()) {
+    const database = await getTauriDb();
+    const result = await database.select<{ cnt: number }[]>(
+      'SELECT COUNT(*) as cnt FROM tags WHERE clip_id = ?', [clipId]
+    );
+    return result[0].cnt;
+  } else {
+    const result = await webQuery<{ cnt: number }[]>(
+      'SELECT COUNT(*) as cnt FROM tags WHERE clip_id = ?', [clipId]
+    );
+    return result ? result[0].cnt : 0;
+  }
+}
+export async function deleteVideo(videoId: number): Promise<void> {
+  if (isTauri()) {
+    const database = await getTauriDb();
+    await database.execute('DELETE FROM videos WHERE id = ?', [videoId]);
+  } else {
+    await webExecute('DELETE FROM videos WHERE id = ?', [videoId]);
+  }
 }
